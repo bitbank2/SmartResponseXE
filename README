@@ -1,0 +1,8 @@
+Larry's SMART Response XE support library
+Includes code to draw on the LCD and read keys from the keyboard
+
+Installation:
+------------
+Create a directory called SmartResponseXE in your ~/Documents/Arduino/libraries 
+directory and copy the cpp and h files there.
+It will be available as a library to import into your Arduino Sketch.
