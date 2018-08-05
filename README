@@ -6,3 +6,14 @@ Installation:
 Create a directory called SmartResponseXE in your ~/Documents/Arduino/libraries 
 directory and copy the cpp and h files there.
 It will be available as a library to import into your Arduino Sketch.
+
+Features:
+---------
+1) Initialize LCD controller into 4-level grayscale mode
+2) Fill display with any byte pattern
+3) Draw 3 sizes of text (6x8, 9x8, 15x8) with any background or foreground color
+4) Draw outline or filled rectangles in any color
+5) Set the display hardware scroll offset
+6) Read the keyboard map into an array
+7) Interpret the keyboard array into key presses with SHIFT and SYM key support
+
