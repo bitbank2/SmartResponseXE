@@ -16,3 +16,11 @@ Features:
 6) Read the keyboard map into an array
 7) Interpret the keyboard array into key presses with SHIFT and SYM key support
 
+Getting Started:
+---------------
+The first thing to do is initialize and clear the LCD. The pin numbers for the SRXE are:
+  // CS, D/C, RESET
+  SRXEInit(7, 24, 18); // initialize display
+Next, you can draw some text or rectangles. The color can be 0-3 (0=off, 3=fully on)
+  SRXEWriteString(0,120,"Hello World!", FONT_LARGE, 3, 0); // draw large black text at x=0,y=120, fg=3, bg=0
+  
