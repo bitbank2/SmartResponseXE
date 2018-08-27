@@ -7,10 +7,11 @@
 #ifndef __SMART_RESPONSE_XE__
 #define __SMART_RESPONSE_XE__
 
-// Font sizes (9x8, 6x8, 15x16)
+// Font sizes (9x8, 6x8, 12x16, 15x16)
 #define FONT_NORMAL 0
 #define FONT_SMALL 1
-#define FONT_LARGE 2
+#define FONT_MEDIUM 2
+#define FONT_LARGE 3
 
 // Keyboard info
 #define ROWS 6
@@ -82,6 +83,25 @@ byte *SRXEGetKeyMap(void);
 // internally calls SRXEScanKeyboard()
 //
 byte SRXEGetKey(void);
+
+//
+// Erase a 4k sector
+// This is the smallest area that can be erased
+// It can take around 60ms
+// This function waits until it completes
+// returns 1 for success, 0 for failure
+//
+int SRXEFlashEraseSector(uint32_t ulAddr);
+//
+// Write a 256-byte flash page
+// Address must be on a page boundary
+// returns 1 for success, 0 for failure
+//
+int SRXEFlashWritePage(uint32_t ulAddr, uint8_t *pSrc);
+//
+// Read N bytes from SPI flash
+//
+int SRXEFlashRead(uint32_t ulAddr, uint8_t *pDest, int iLen);
 
 #endif // __SMART_RESPONSE_XE__
 

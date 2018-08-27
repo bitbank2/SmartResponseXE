@@ -22,12 +22,15 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 #include <Arduino.h>
+#include <avr/pgmspace.h>
 #include "SmartResponseXE.h"
-#include <SPI.h>
+//#include <SPI.h>
 
 // Mapping of keyboard to GPIO pins
-static byte rowPins[ROWS] = {6,35,34,8,9,0};
-static byte colPins[COLS] = {4,A1,A3,2,1,25,16,19,23,22}; 
+//static byte rowPins[ROWS] = {6,35,34,8,9,0};
+//static byte colPins[COLS] = {4,A1,A3,2,1,25,16,19,23,22};
+const uint8_t rowPins[ROWS] = {0xe6, 0xb7, 0xb6, 0xb5, 0xb4, 0xe0};
+const uint8_t colPins[COLS] = {0xe4, 0xf1, 0xf3, 0xe2, 0xe1, 0xd7, 0xa0, 0xa5, 0xd5, 0xd4};
 static byte bKeyMap[COLS]; // bits indicating pressed keys
 static byte bOldKeyMap[COLS]; // previous map to look for pressed/released keys
 static byte bColorToByte[4] = {0, 0x4a, 0x92, 0xff};
@@ -43,6 +46,17 @@ typedef enum
  MODE_COMMAND
 } DC_MODE;
 
+#ifndef HIGH
+#define HIGH 1
+#define LOW 0
+#define INPUT 0
+#define INPUT_PULLUP 1
+#define OUTPUT 2
+#endif
+
+// Chip select for the external 1Mb flash module
+#define CS_FLASH 0xd3
+
 //Keyboard
 //Logical Layout (SK# are screen keys: top to bottom 1-5 on left, 6-10 on right):
 //                ROW1|ROW2|ROW3|ROW4|ROW5|ROW6|ROW7|ROW8|ROW9|ROW10
@@ -56,38 +70,47 @@ byte OriginalKeys[] = {'1','2','3','4','5','6','7','8','9','0',
                        'q','w','e','r','t','y','u','i','o','p',
                        'a','s','d','f','g','h','j','k','l',8,
                        0  ,'z','x','c','v','b','n',0x5,0,0x4, // 5 = down, 4 = up
-                       0  ,  0,  0,  0,' ',',','.','m',  2,  3, // 2 = left, 3 = right
+                       0  ,0xd,  0,  0,' ',',','.','m',  2,  3, // 2 = left, 3 = right
                        0xf0,0xf1,0xf2,0xf3,0xf4,0xf5,0xf6,0xf7,0xf8,0xf9};
 byte ShiftedKeys[] =  {'1','2','3','4','5','6','7','8','9','0',
                        'Q','W','E','R','T','Y','U','I','O','P',
                        'A','S','D','F','G','H','J','K','L',8,
                        0  ,'Z','X','C','V','B','N',0x5,0,0x4, // 5 = down
-                       0  ,  0,  0,  0,'_',',','.','M',  2,  3,
+                       0  ,0xd,  0,  0,'_',',','.','M',  2,  3,
                        0xf0,0xf1,0xf2,0xf3,0xf4,0xf5,0xf6,0xf7,0xf8,0xf9};
 byte SymKeys[] =       {'!','2','3','$','%','6','\'','\"','(',')',
                        'q','w','e','r','t','y','u','i','[',']',
                        '=','+','-','f','g','h','j',':','?',8,
-                        0 ,'z','x','c','v','b','n',0xd,0,0x4, // sym down = ENTER
-                        0 , 0 , 0 , 0 ,0x1,'<','>','m', 2, 3, // 1 = menu
+                        0 ,'z','x','c','v','b','n',0x5,0,0x4,
+                        0 ,0xd, 0 , 0 ,0x1,'<','>','m', 2, 3, // 1 = menu
                        0xf0,0xf1,0xf2,0xf3,0xf4,0xf5,0xf6,0xf7,0xf8,0xf9};
 
+//
+// Power on the LCD
+//
+const char powerup[] PROGMEM = {
+1, 0x01, // soft reset
+99, 120, // 120ms delay
+1, 0x11,  // sleep out
+1, 0x28,  // display off
+99, 50, // 50ms delay
+3, 0xc0, 0xf0, 0x00, // Vop = 0xF0
+2, 0xc3, 0x04, // BIAS = 1/14
+2, 0xc4, 0x05, // Booster = x8
+2, 0xd0, 0x1d, // Enable analog circuit
+2, 0xb3, 0x00, // Set FOSC divider
+2, 0xb5, 0x8b, // N-Line = 0
+1, 0x38,       // Set grayscale mode (0x39 = monochrome mode)
+2, 0x3a, 0x02, // Enable DDRAM interface
+2, 0x36, 0x00, // Scan direction setting
+2, 0xB0, 0x9f, // Duty setting (0x87?)
+5, 0xf0, 0x12,0x12,0x12,0x12, // 77Hz frame rate in all temperatures
+1, 0x20, // Display inversion off
+1, 0x29, // Display ON
+0};
+
 // small font
-const byte ucFont[]PROGMEM = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x7e,0x81,0x95,0xb1,0xb1,0x95,0x81,0x7e,
-  0x7e,0xff,0xeb,0xcf,0xcf,0xeb,0xff,0x7e,0x0e,0x1f,0x3f,0x7e,0x3f,0x1f,0x0e,0x00,
-  0x08,0x1c,0x3e,0x7f,0x3e,0x1c,0x08,0x00,0x38,0x9a,0x9f,0xff,0x9f,0x9a,0x38,0x00,
-  0x10,0xb8,0xfc,0xfe,0xfc,0xb8,0x10,0x00,0x00,0x00,0x18,0x3c,0x3c,0x18,0x00,0x00,
-  0xff,0xff,0xe7,0xc3,0xc3,0xe7,0xff,0xff,0x00,0x3c,0x66,0x42,0x42,0x66,0x3c,0x00,
-  0xff,0xc3,0x99,0xbd,0xbd,0x99,0xc3,0xff,0x70,0xf8,0x88,0x88,0xfd,0x7f,0x07,0x0f,
-  0x00,0x4e,0x5f,0xf1,0xf1,0x5f,0x4e,0x00,0xc0,0xe0,0xff,0x7f,0x05,0x05,0x07,0x07,
-  0xc0,0xff,0x7f,0x05,0x05,0x65,0x7f,0x3f,0x99,0x5a,0x3c,0xe7,0xe7,0x3c,0x5a,0x99,
-  0x7f,0x3e,0x3e,0x1c,0x1c,0x08,0x08,0x00,0x08,0x08,0x1c,0x1c,0x3e,0x3e,0x7f,0x00,
-  0x00,0x24,0x66,0xff,0xff,0x66,0x24,0x00,0x00,0x5f,0x5f,0x00,0x00,0x5f,0x5f,0x00,
-  0x06,0x0f,0x09,0x7f,0x7f,0x01,0x7f,0x7f,0xc0,0x9a,0xbf,0xa5,0xbd,0xd9,0x43,0x02,
-  0x00,0x70,0x70,0x70,0x70,0x70,0x70,0x00,0x80,0x94,0xb6,0xff,0xff,0xb6,0x94,0x80,
-  0x00,0x04,0x06,0x7f,0x7f,0x06,0x04,0x00,0x00,0x10,0x30,0x7f,0x7f,0x30,0x10,0x00,
-  0x08,0x08,0x08,0x2a,0x3e,0x1c,0x08,0x00,0x08,0x1c,0x3e,0x2a,0x08,0x08,0x08,0x00,
-  0x3c,0x3c,0x20,0x20,0x20,0x20,0x20,0x00,0x08,0x1c,0x3e,0x08,0x08,0x3e,0x1c,0x08,
-  0x30,0x38,0x3c,0x3e,0x3e,0x3c,0x38,0x30,0x06,0x0e,0x1e,0x3e,0x3e,0x1e,0x0e,0x06,
+const byte ucFont[]PROGMEM = {
   0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x06,0x5f,0x5f,0x06,0x00,0x00,
   0x00,0x07,0x07,0x00,0x07,0x07,0x00,0x00,0x14,0x7f,0x7f,0x14,0x7f,0x7f,0x14,0x00,
   0x24,0x2e,0x2a,0x6b,0x6b,0x3a,0x12,0x00,0x46,0x66,0x30,0x18,0x0c,0x66,0x62,0x00,
@@ -138,18 +161,7 @@ const byte ucFont[]PROGMEM = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x7e,0x81,
   0x02,0x03,0x01,0x03,0x02,0x03,0x01,0x00,0x70,0x78,0x4c,0x46,0x4c,0x78,0x70,0x00};
 
   // 5x7 font (in 6x8 cell)
-const unsigned char ucSmallFont[]PROGMEM = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x3e,0x45,0x51,0x45,0x3e,0x00,0x3e,0x6b,0x6f,
-  0x6b,0x3e,0x00,0x1c,0x3e,0x7c,0x3e,0x1c,0x00,0x18,0x3c,0x7e,0x3c,0x18,0x00,0x30,
-  0x36,0x7f,0x36,0x30,0x00,0x18,0x5c,0x7e,0x5c,0x18,0x00,0x00,0x18,0x18,0x00,0x00,
-  0x00,0xff,0xe7,0xe7,0xff,0xff,0x00,0x3c,0x24,0x24,0x3c,0x00,0x00,0xc3,0xdb,0xdb,
-  0xc3,0xff,0x00,0x30,0x48,0x4a,0x36,0x0e,0x00,0x06,0x29,0x79,0x29,0x06,0x00,0x60,
-  0x70,0x3f,0x02,0x04,0x00,0x60,0x7e,0x0a,0x35,0x3f,0x00,0x2a,0x1c,0x36,0x1c,0x2a,
-  0x00,0x00,0x7f,0x3e,0x1c,0x08,0x00,0x08,0x1c,0x3e,0x7f,0x00,0x00,0x14,0x36,0x7f,
-  0x36,0x14,0x00,0x00,0x5f,0x00,0x5f,0x00,0x00,0x06,0x09,0x7f,0x01,0x7f,0x00,0x22,
-  0x4d,0x55,0x59,0x22,0x00,0x60,0x60,0x60,0x60,0x00,0x00,0x14,0xb6,0xff,0xb6,0x14,
-  0x00,0x04,0x06,0x7f,0x06,0x04,0x00,0x10,0x30,0x7f,0x30,0x10,0x00,0x08,0x08,0x3e,
-  0x1c,0x08,0x00,0x08,0x1c,0x3e,0x08,0x08,0x00,0x78,0x40,0x40,0x40,0x40,0x00,0x08,
-  0x3e,0x08,0x3e,0x08,0x00,0x30,0x3c,0x3f,0x3c,0x30,0x00,0x03,0x0f,0x3f,0x0f,0x03,
+const unsigned char ucSmallFont[]PROGMEM = {
   0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x06,0x5f,0x06,0x00,0x00,0x07,0x03,0x00,
   0x07,0x03,0x00,0x24,0x7e,0x24,0x7e,0x24,0x00,0x24,0x2b,0x6a,0x12,0x00,0x00,0x63,
   0x13,0x08,0x64,0x63,0x00,0x36,0x49,0x56,0x20,0x50,0x00,0x00,0x07,0x03,0x00,0x00,
@@ -187,69 +199,179 @@ const unsigned char ucSmallFont[]PROGMEM = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0
   0x4c,0x00,0x00,0x08,0x3e,0x41,0x41,0x00,0x00,0x00,0x00,0x77,0x00,0x00,0x00,0x00,
   0x41,0x41,0x3e,0x08,0x00,0x02,0x01,0x02,0x01,0x00,0x00,0x3c,0x26,0x23,0x26,0x3c};
 
+uint8_t getPinInfo(uint8_t pin, volatile uint8_t **iDDR, volatile uint8_t **iPort, int bInput)
+{
+  uint8_t port, bit;
+  
+  port = (pin & 0xf0); // hex port (A,B,D,E,F)
+  bit = pin & 0x7;
+  switch (port)
+  {
+    case 0xA0: // really port G
+      *iPort = (bInput) ? &PING : &PORTG;
+      *iDDR = &DDRG;
+      break;
+    case 0xB0:
+      *iPort = (bInput) ? &PINB : &PORTB;
+      *iDDR = &DDRB;
+      break;
+    case 0xD0:
+      *iPort = (bInput) ? &PIND : &PORTD;
+      *iDDR = &DDRD;
+      break;
+    case 0xE0:
+      *iPort = (bInput) ? &PINE : &PORTE;
+      *iDDR = &DDRE;
+      break;
+    case 0xF0:
+      *iPort = (bInput) ? &PINF : &PORTF;
+      *iDDR = &DDRF;
+      break;
+  }
+  return bit;
+} /* getPinInfo() */
+//
+// Simplified pin numbering scheme uses a hex number to specify the port number
+// and bit. Top 4 bits = port (B/D/E/F/G), bottom 3 bits specify the bit of the port
+// e.g. 0xB4 = PORTB, bit 4, 0Ax is for port G
+//
+void mypinMode(uint8_t pin, uint8_t mode)
+{
+  uint8_t bit;
+  volatile uint8_t *iPort, *iDDR;
+  
+  bit = getPinInfo(pin, &iDDR, &iPort, 0);
+  switch (mode)
+  {
+    case INPUT:
+      *iDDR &= ~(1<<bit);
+      break;
+    case INPUT_PULLUP:
+      *iDDR |= (1<<bit);
+      *iPort |= (1<<bit); // set the output high, then set it as an input
+      *iDDR &= ~(1<<bit);
+      break;
+    case OUTPUT:
+      *iDDR |= (1<<bit);
+      break;
+  }
+} /* mypinMode() */
+
+void mydigitalWrite(uint8_t pin, uint8_t value)
+{
+  uint8_t bit;
+  volatile uint8_t *iPort, *iDDR;
+  
+  bit = getPinInfo(pin, &iDDR, &iPort, 0);
+  if (value == LOW)
+  {
+    *iPort &= ~(1<<bit);
+  }
+  else
+  {
+    *iPort |= (1<<bit);
+  }
+} /* mydigitalWrite() */
+
+uint8_t mydigitalRead(uint8_t pin)
+{
+  uint8_t bit;
+  volatile uint8_t *iPort, *iDDR;
+  
+  bit = getPinInfo(pin, &iDDR, &iPort, 1);
+  if (*iPort & (1<<bit))
+    return HIGH;
+  else
+    return LOW;
+} /* mydigitalRead() */
+//
+// Initialize SPI using direct register access
+//
+void SPI_Init(void)
+{
+  uint8_t temp;
+  // Initialize SPI
+  // Set SS to high so a connected chip will be "deselected" by default
+//  digitalWrite(SS, HIGH);
+  mydigitalWrite(0xb0, HIGH);
+  
+  // When the SS pin is set as OUTPUT, it can be used as
+  // a general purpose output port (it doesn't influence
+  // SPI operations).
+//  pinMode(SS, OUTPUT);
+  mypinMode(0xb0, OUTPUT);
+
+  // SPCR = 01010000
+  //interrupt disabled,spi enabled,msb 1st,master,clk low when idle,
+  //sample on leading edge of clk,system clock/4 rate (fastest)
+  SPCR = (1<<SPE)|(1<<MSTR);
+  temp=SPSR; // clear old data
+  temp=SPDR;
+  if (temp != 0) {}; // suppress compiler warning
+  // Set SCK as output
+  //pinMode(13, OUTPUT);
+  mypinMode(0xb1, OUTPUT);
+  // set MOSI as output
+  //pinMode(11, OUTPUT);
+  mypinMode(0xb2, OUTPUT);
+
+} /* SPI_Init() */
+
+uint8_t SPI_transfer(volatile char data)
+{
+  SPDR = data;                    // Start the transmission
+  while (!(SPSR & (1<<SPIF)))     // Wait for the end of the transmission
+  {
+  };
+  return SPDR;                    // return the received byte
+} /* SPI_transfer() */
+
 // Sets the D/C pin to data or command mode
 static void SRXESetMode(int iMode)
 {
-  digitalWrite(iDCPin, (iMode == MODE_DATA));
+  mydigitalWrite(iDCPin, (iMode == MODE_DATA));
 } /* SRXESetMode() */
+// Write a block of pixel data to the LCD
+// Length can be anything from 1 to 504 (whole display)
+void SRXEWriteDataBlock(unsigned char *ucBuf, int iLen)
+{
+  int i;
+  
+  mydigitalWrite(iCSPin, LOW);
+  for (i=0; i<iLen; i++)
+    SPI_transfer(ucBuf[i]);
+  mydigitalWrite(iCSPin, HIGH);
+}
 //
-// Power on the LCD
+// Command sequence to power ip the LCD controller
 //
 void SRXEPowerUp(void)
 {
-byte ucTemp[4], uc;
+uint8_t ucTemp[4];
+const char *pList = powerup;
+uint8_t val, count, len = 1;
 
-    SRXEWriteCommand(0x11); // Sleep Out
-    SRXEWriteCommand(0x28); // Display OFF
-    delay(50); // Delay 50 ms
-
-    SRXEWriteCommand(0xC0);
-    ucTemp[0] = 0xf0; // Vop = F0h
-    ucTemp[1] = 0x00;
-    SRXEWriteDataBlock(ucTemp, 2);
-
-    SRXEWriteCommand(0xC3);
-    uc = 0x04;
-    SRXEWriteDataBlock(&uc, 1); // BIAS = 1/14
-
-    SRXEWriteCommand(0xC4);
-    uc = 0x05;
-    SRXEWriteDataBlock(&uc, 1); // Booster = x8
-
-    SRXEWriteCommand(0xD0);
-    uc = 0x1d;
-    SRXEWriteDataBlock(&uc, 1); // Enable Analog Circuit
-
-    SRXEWriteCommand(0xB3);
-    uc = 0x00;
-    SRXEWriteDataBlock(&uc, 1); // Set FOSC divider
-
-    SRXEWriteCommand(0xB5);
-    uc = 0x8B;
-    SRXEWriteDataBlock(&uc, 1); // N-Line = 0
-
-    // Select mode
-    SRXEWriteCommand(0x38); // 0x39 Monochrome mode. 0x38 - gray Mode
-
-    SRXEWriteCommand(0x3A); // Enable DDRAM Interface
-    uc = 0x02;
-    SRXEWriteDataBlock(&uc, 1); // monochrome and 4-level
-
-    SRXEWriteCommand(0x36); // Scan Direction Setting
-    uc = 0x00;
-    SRXEWriteDataBlock(&uc, 1);
-
-    SRXEWriteCommand(0xB0); // Duty Setting
-    uc = 0x9f;
-    SRXEWriteDataBlock(&uc, 1); //0x87
-
-    SRXEWriteCommand(0xF0); // Frame rate in grayscale mode
-    ucTemp[0] = ucTemp[1] = ucTemp[2] = ucTemp[3] = 0x12; // 77Hz in all temps
-    SRXEWriteDataBlock(ucTemp, 4);
-
-    SRXEWriteCommand(0x20); // Display inversion off
-    
-    SRXEWriteCommand(0x29); // Display ON
+   while (len != 0)
+   {
+      len = pgm_read_byte(pList++);
+      if (len == 99) // delay
+      {
+         val = pgm_read_byte(pList++);
+         delay(val);
+      }
+      else if (len != 0) // send command with optional data
+      {
+         val = pgm_read_byte(pList++); // command
+         SRXEWriteCommand(val);
+         count = len-1;
+         if (count != 0)
+         {
+            memcpy_P(ucTemp, pList, count);
+            pList += count;
+            SRXEWriteDataBlock(ucTemp, count);
+         }
+      }
+   }
 } /* SRXEPowerUp() */
 //
 // Initializes the LCD controller 
@@ -259,34 +381,31 @@ int SRXEInit(int iCS, int iDC, int iReset)
 {
 byte uc, ucTemp[8];
 
-        iCSPin = iCS;
-        iDCPin = iDC;
-        iResetPin = iReset;
+  iCSPin = iCS;
+  iDCPin = iDC;
+  iResetPin = iReset;
 
-        SPI.begin();
-        SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0)); // 8Mhz is a good speed for the Nokia 5110
-        pinMode(iCSPin,OUTPUT);
-        digitalWrite(iCSPin, HIGH);
-
-        pinMode(iDCPin, OUTPUT);
-        pinMode(iResetPin, OUTPUT);
+  SPI_Init();
+  mypinMode(iCSPin,OUTPUT);
+  mypinMode(CS_FLASH, OUTPUT); // in case we want to use the SPI flash
+  mydigitalWrite(iCSPin, HIGH);
+  
+  mypinMode(iDCPin, OUTPUT);
+  mypinMode(iResetPin, OUTPUT);
 
   // Start by reseting the LCD controller
-        digitalWrite(iResetPin, HIGH);
-        delay(50);
-        digitalWrite(iResetPin, LOW);
-        delay(5);
-        digitalWrite(iResetPin, HIGH); // take it out of reset
-        delay(150); // datasheet says it must be at least 120ms
+  mydigitalWrite(iResetPin, HIGH);
+  delay(50);
+  mydigitalWrite(iResetPin, LOW);
+  delay(5);
+  mydigitalWrite(iResetPin, HIGH); // take it out of reset
+  delay(150); // datasheet says it must be at least 120ms
 
-        digitalWrite(iCSPin, LOW); // leave CS low forever
+//  mydigitalWrite(iCSPin, LOW); // leave CS low forever
 
-    SRXEWriteCommand(0x01); // Soft reset
-    delay(120);
-   
   SRXEPowerUp(); // turn on and initialize the display
   
-  SRXEFill(0); // erase memory
+  SRXEFill(0); // erase memory (it's already cleared by resetting it)
   return 0;
 
 } /* SRXEInit() */
@@ -305,9 +424,11 @@ void SRXEPowerDown()
 //
 static void SRXEWriteCommand(unsigned char c)
 {
+  mydigitalWrite(iCSPin, LOW);
   SRXESetMode(MODE_COMMAND);
-  SPI.transfer(c);
+  SPI_transfer(c);
   SRXESetMode(MODE_DATA);
+  mydigitalWrite(iCSPin, HIGH);
 } /* SRXEWriteCommand() */
 //
 // Send commands to position the "cursor" to the given
@@ -334,25 +455,6 @@ byte ucTemp[4];
   SRXEWriteCommand(0x2c); // write RAM
 } /* SRXESetPosition() */
 
-// Write a block of pixel data to the LCD
-// Length can be anything from 1 to 504 (whole display)
-void SRXEWriteDataBlock(unsigned char *ucBuf, int iLen)
-{
-int i;
-
-//  digitalWrite(iCSPin, LOW);
-  while (iLen > 0) // internal buffer is only 32 bytes
-  {
-     if (iLen >= 32)
-        i = 32;
-     else
-        i = iLen;
-     SPI.transfer(ucBuf, i);
-     ucBuf += i;
-     iLen -= i;
-  }
-//  digitalWrite(iCSPin, HIGH);
-}
 //
 // Scroll the screen N lines vertically (positive or negative)
 // The value given represents a delta which affects the current scroll offset
@@ -444,23 +546,34 @@ byte fgColor0, fgColor1, fgColor2, bgColor;
     bgColor = bColorToByte[iBGColor];
         
     iLen = strlen(szMsg);
-    if (iSize == FONT_LARGE) // draw 15x16 font
+    if (iSize == FONT_LARGE || iSize == FONT_MEDIUM) // draw 12x16 or 15x16 font
   {
-    if ((15*iLen) + x > 384) iLen = (384 - x)/15; // can't display it all
+  int iWidth, iDelta;
+    iWidth = (iSize == FONT_LARGE) ? 15 : 12;
+    iDelta = (iSize == FONT_LARGE) ? 5 : 4;
+    if ((iWidth*iLen) + x > 384) iLen = (384 - x)/iWidth; // can't display it all
     if (iLen < 0)return -1;
     for (i=0; i<iLen; i++)
     {
       int tx, ty;
       byte bTemp[84], bMask, bOut, bOut2, *d;
-      s = (unsigned char *)&ucFont[(unsigned char)szMsg[i] * 8];
-      memcpy_P(ucTemp, s, 8); // copy from FLASH memory
+      if (iSize == FONT_LARGE)
+      {
+         s = (unsigned char *)&ucFont[((unsigned char)szMsg[i]-32) * 8];
+         memcpy_P(ucTemp, s, 8); // copy from FLASH memory
+      }
+      else
+      {
+         s = (unsigned char *)&ucSmallFont[((unsigned char)szMsg[i]-32) * 6];
+         memcpy_P(ucTemp, s, 6);
+      }
        // convert from 1-bpp to 2/3-bpp
       d = bTemp;
       s = ucTemp;
       bMask = 1;
       for (ty=0; ty<8; ty++)
       {
-        for (tx=0; tx<9; tx+=3) // 3 sets of 3 pixels
+        for (tx=0; tx<iWidth-6; tx+=3) // 3 sets of 3 pixels
         {
            bOut = bOut2 = bgColor;
            if (s[tx] & bMask)
@@ -470,29 +583,29 @@ byte fgColor0, fgColor1, fgColor2, bgColor;
            }
            if (s[tx+1] & bMask)
            {
-              bOut &= 0xfc; // clear middle 3 bits
-              bOut2 &= 0x1f;
+              bOut &= 0xfc; // clear bottom 2 bits
+              bOut2 &= 0x1f; // clear top 3 bits
               bOut |= fgColor2; // third pixel (2 bits)
               bOut2 |= fgColor0;
            }
-           if (s[tx+2] & bMask && tx != 6)
+           if (s[tx+2] & bMask)
            {
               bOut2 &= 0xe0; // clear lower 5 bits
               bOut2 |= fgColor1 | fgColor2; // 2nd & 3rd pixel2 of second byte
            }
-           d[0] = d[5] = bOut;
+           d[0] = d[iDelta] = bOut;
            if (tx != 6)
-                d[1] = d[6] = bOut2;
+                d[1] = d[iDelta+1] = bOut2;
            d += 2;
         } // for tx
         d += 4; // skip extra line (add 4 since we incremented by 6 already)
         bMask <<= 1;
       } // for ty
-      SRXESetPosition(x, y, 15, 16);
-      SRXEWriteDataBlock(bTemp, 80); // write character pattern
-      x += 15;
+      SRXESetPosition(x, y, iWidth, 16);
+      SRXEWriteDataBlock(bTemp, 16*iDelta); // write character pattern
+      x += iWidth;
     } // for each character
-  } // large
+  } // large+medium
   else if (iSize == FONT_NORMAL)// draw 8x8 font
    {
     if ((9*iLen) + x > 384) iLen = (384 - x)/9; // can't display it all
@@ -502,7 +615,7 @@ byte fgColor0, fgColor1, fgColor2, bgColor;
     {
       int tx, ty;
       byte bTemp[24], bMask, bOut, *d;
-      s = (unsigned char *)&ucFont[(unsigned char)szMsg[i] * 8];
+      s = (unsigned char *)&ucFont[((unsigned char)szMsg[i]-32) * 8];
       memcpy_P(ucTemp, s, 8); // copy from FLASH memory
        // convert from 1-bpp to 2/3-bpp
       d = bTemp;
@@ -544,7 +657,7 @@ byte fgColor0, fgColor1, fgColor2, bgColor;
     {
       int tx, ty;
       byte bTemp[16], bMask, bOut, *d;
-      s = (unsigned char *)&ucSmallFont[(unsigned char)szMsg[i] * 6];
+      s = (unsigned char *)&ucSmallFont[((unsigned char)szMsg[i]-32) * 6];
       memcpy_P(ucTemp, s, 6); // copy from FLASH memory
        // convert from 1-bpp to 2/3-bpp
       d = bTemp;
@@ -595,6 +708,146 @@ byte temp[128];
      }
 } /* SRXEFill() */
 //
+// External SPI flash functions (MX25L1005C - Macronix 1Mb/128KB serial flash memory)
+// Data sheet here: http://www1.futureelectronics.com/doc/MACRONIX/MX25L1005CZUI-12GTR.pdf
+// The CS line must be set low before each command and then set high after
+// If you try to send 2 commands with the CS line left low, they won't execute
+//
+// ------------------
+//
+// Erase a 4k sector
+// This is the smallest area that can be erased
+// It can take around 60ms
+// This function waits until it completes
+// returns 1 for success, 0 for failure
+//
+int SRXEFlashEraseSector(uint32_t ulAddr)
+{
+  uint8_t rc;
+  int timeout;
+  if (ulAddr & 4095L) // invalid address
+    return 0;
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x05); // read status register
+  rc = SPI_transfer(0);
+  mydigitalWrite(CS_FLASH, HIGH);
+  if (rc & 1) // indicates the chip is busy in a write operation
+  {
+    return 0; // fail
+  }
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x06); // WREN - Write enable
+  mydigitalWrite(CS_FLASH, HIGH);
+  
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x20); // Sector Erase
+  // send 3-byte address (big-endian order)
+  SPI_transfer((uint8_t)(ulAddr >> 16)); // AD1
+  SPI_transfer((uint8_t)(ulAddr >> 8)); // AD2
+  SPI_transfer((uint8_t)ulAddr); // AD3
+  mydigitalWrite(CS_FLASH, HIGH);
+  
+  // wait for the erase to complete
+  rc = 1;
+  timeout = 0;
+  mydigitalWrite(CS_FLASH, LOW);
+  while (rc & 1)
+  {
+    SPI_transfer(0x05); // read status register
+    rc = SPI_transfer(0);
+    delay(1);
+    timeout++;
+    if (timeout >= 120) // took too long, bail out
+    {
+      mydigitalWrite(CS_FLASH, HIGH);
+      return 0;
+    }
+  }
+  mydigitalWrite(CS_FLASH, HIGH);
+  return 1;
+} /* SRXEFlashEraseSector() */
+
+//
+// Write a 256-byte flash page
+// Address must be on a page boundary
+// returns 1 for success, 0 for failure
+//
+int SRXEFlashWritePage(uint32_t ulAddr, uint8_t *pSrc)
+{
+  int i, timeout;
+  uint8_t rc;
+   if (ulAddr & 255L) // invalid address
+     return 0;
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x05); // read status register
+  rc = SPI_transfer(0);
+  mydigitalWrite(CS_FLASH, HIGH);
+  if (rc & 1) // indicates the chip is busy in a write operation
+  {
+    return 0; // fail
+  }
+  // Disable write protect by clearing the status bits
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x01); // WRSR - write status register
+  SPI_transfer(0x00); // set all bits to 0
+  mydigitalWrite(CS_FLASH, HIGH);
+
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x06); // WREN - Write enable
+  mydigitalWrite(CS_FLASH, HIGH);
+  
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x02); // PP - page program
+  // send 3-byte address (big-endian order)
+  SPI_transfer((uint8_t)(ulAddr >> 16)); // AD1
+  SPI_transfer((uint8_t)(ulAddr >> 8)); // AD2
+  SPI_transfer((uint8_t)ulAddr); // AD3
+  for (i=0; i<256; i++)
+  {
+    SPI_transfer(pSrc[i]); // write the 256 data bytes
+  }
+  mydigitalWrite(CS_FLASH, HIGH); // this executes the command internally
+  // wait for the write to complete
+  rc = 1;
+  timeout = 0;
+  mydigitalWrite(CS_FLASH, LOW);
+  while (rc & 1)
+  {
+    SPI_transfer(0x05); // read status register
+    rc = SPI_transfer(0);
+    delay(1);
+    timeout++;
+    if (timeout >= 20) // took too long, bail out
+    {
+      mydigitalWrite(CS_FLASH, HIGH);
+      return 0;
+    }
+  }
+  mydigitalWrite(CS_FLASH, HIGH);
+  return 1;
+} /* SRXEFlashWritePage() */
+//
+// Read N bytes from SPI flash
+//
+int SRXEFlashRead(uint32_t ulAddr, uint8_t *pDest, int iLen)
+{
+  int i;
+  
+  mydigitalWrite(CS_FLASH, LOW);
+  SPI_transfer(0x03); // issue read instruction
+  // send 3-byte address (big-endian order)
+  SPI_transfer((uint8_t)(ulAddr >> 16)); // AD1
+  SPI_transfer((uint8_t)(ulAddr >> 8)); // AD2
+  SPI_transfer((uint8_t)ulAddr); // AD3
+  for (i=0; i<iLen; i++) // read the bytes out
+  {
+    *pDest++ = SPI_transfer(0); // need to write something to read from SPI
+  }
+  mydigitalWrite(CS_FLASH, HIGH); // de-activate
+  return 1;
+} /* SRXEFlashRead() */
+
+//
 // Scan the rows and columns and store the results in the key map
 //
 void SRXEScanKeyboard(void)
@@ -603,7 +856,7 @@ byte r, c;
 
   for (r=0; r<ROWS; r++)
   {
-    pinMode(rowPins[r], INPUT_PULLUP);
+    mypinMode(rowPins[r], INPUT_PULLUP);
   }
   // save current keymap to compare for pressed/released keys
   memcpy(bOldKeyMap, bKeyMap, sizeof(bKeyMap));
@@ -611,15 +864,15 @@ byte r, c;
   for (c=0; c<COLS; c++)
   {
      bKeyMap[c] = 0;
-     pinMode(colPins[c], OUTPUT);
-     digitalWrite(colPins[c], LOW); // test this column
+     mypinMode(colPins[c], OUTPUT);
+     mydigitalWrite(colPins[c], LOW); // test this column
      for (r=0; r<ROWS; r++)
      {
-        if (digitalRead(rowPins[r]) == LOW)
+        if (mydigitalRead(rowPins[r]) == LOW)
            bKeyMap[c] |= (1 << r); // set a bit for each pressed key
      } // for r
-     digitalWrite(colPins[c], HIGH); // leave pin in high impedance state
-     pinMode(colPins[c], INPUT);
+     mydigitalWrite(colPins[c], HIGH); // leave pin in high impedance state
+     mypinMode(colPins[c], INPUT);
   } // for c
 } /* SRXEScanKeyboard() */
 //
