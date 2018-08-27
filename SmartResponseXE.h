@@ -22,6 +22,15 @@
 #define LCD_HEIGHT 136
 
 //
+// Simplified pin numbering scheme uses a hex number to specify the port number
+// and bit. Top 4 bits = port (B/D/E/F/G), bottom 3 bits specify the bit of the port
+// e.g. 0xB4 = PORTB, bit 4, 0Ax is for port G
+//
+void mypinMode(uint8_t pin, uint8_t mode);
+void mydigitalWrite(uint8_t pin, uint8_t value);
+uint8_t mydigitalRead(uint8_t pin);
+
+//
 // Power on the LCD
 //
 void SRXEPowerUp(void);
