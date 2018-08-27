@@ -1,26 +1,22 @@
 Larry's SMART Response XE support library
-Includes code to draw on the LCD and read keys from the keyboard
+
+Features:
+--------
+1) LCD initialization (4-gray levels) and support to draw 4 sizes of characters and outline+filled rectangles
+2) Functions to erase/write/read the external 128K byte SPI FLASH memory
+3) Fast GPIO access with simplified pin numbering (e.g. PORTD bit3 = pin 0xD3)
+4) Scan the keyboard and return pressed keys translated with the shift/sym keys
 
 Installation:
 ------------
 1) Download the library: https://github.com/bitbank2/SmartResponseXE/archive/master.zip
 2) (In the Arduino IDE) Sketch > Include Library > Add .ZIP Library > select the downloaded file > Open
 
-Features:
----------
-1) Initialize LCD controller into 4-level grayscale mode
-2) Fill display with any byte pattern
-3) Draw 3 sizes of text (6x8, 9x8, 15x8) with any background or foreground color
-4) Draw outline or filled rectangles in any color
-5) Set the display hardware scroll offset
-6) Read the keyboard map into an array
-7) Interpret the keyboard array into key presses with SHIFT and SYM key support
-
 Getting Started:
 ---------------
 The first thing to do is initialize and clear the LCD. The pin numbers for the SRXE are:
   // CS, D/C, RESET
-  SRXEInit(7, 24, 18); // initialize display
+  SRXEInit(0xe7, 0xd6, 0xa2); // initialize display
 Next, you can draw some text or rectangles. The color can be 0-3 (0=off, 3=fully on)
   SRXEWriteString(0,120,"Hello World!", FONT_LARGE, 3, 0); // draw large black text at x=0,y=120, fg=3, bg=0
   
