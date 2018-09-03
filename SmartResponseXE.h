@@ -97,10 +97,10 @@ byte SRXEGetKey(void);
 // Erase a 4k sector
 // This is the smallest area that can be erased
 // It can take around 60ms
-// This function waits until it completes
+// This function optionally waits until it completes
 // returns 1 for success, 0 for failure
 //
-int SRXEFlashEraseSector(uint32_t ulAddr);
+int SRXEFlashEraseSector(uint32_t ulAddr, int bWait);
 //
 // Write a 256-byte flash page
 // Address must be on a page boundary

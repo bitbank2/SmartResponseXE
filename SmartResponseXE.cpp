@@ -303,8 +303,8 @@ void SPI_Init(void)
 
   // SPCR = 01010000
   //interrupt disabled,spi enabled,msb 1st,master,clk low when idle,
-  //sample on leading edge of clk,system clock/4 rate (fastest)
-  SPCR = (1<<SPE)|(1<<MSTR);
+  //sample on leading edge of clk,system clock/16 rate
+  SPCR = (1<<SPE)|(1<<MSTR) | 1;
   temp=SPSR; // clear old data
   temp=SPDR;
   if (temp != 0) {}; // suppress compiler warning
@@ -718,10 +718,10 @@ byte temp[128];
 // Erase a 4k sector
 // This is the smallest area that can be erased
 // It can take around 60ms
-// This function waits until it completes
+// This function optionally waits until it completes
 // returns 1 for success, 0 for failure
 //
-int SRXEFlashEraseSector(uint32_t ulAddr)
+int SRXEFlashEraseSector(uint32_t ulAddr, int bWait)
 {
   uint8_t rc;
   int timeout;
@@ -748,22 +748,25 @@ int SRXEFlashEraseSector(uint32_t ulAddr)
   mydigitalWrite(CS_FLASH, HIGH);
   
   // wait for the erase to complete
-  rc = 1;
-  timeout = 0;
-  mydigitalWrite(CS_FLASH, LOW);
-  while (rc & 1)
+  if (bWait)
   {
-    SPI_transfer(0x05); // read status register
-    rc = SPI_transfer(0);
-    delay(1);
-    timeout++;
-    if (timeout >= 120) // took too long, bail out
+    rc = 1;
+    timeout = 0;
+    mydigitalWrite(CS_FLASH, LOW);
+    while (rc & 1)
     {
-      mydigitalWrite(CS_FLASH, HIGH);
-      return 0;
+      SPI_transfer(0x05); // read status register
+      rc = SPI_transfer(0);
+      delay(1);
+      timeout++;
+      if (timeout >= 120) // took too long, bail out
+      {
+        mydigitalWrite(CS_FLASH, HIGH);
+        return 0;
+      }
     }
-  }
-  mydigitalWrite(CS_FLASH, HIGH);
+    mydigitalWrite(CS_FLASH, HIGH);
+  } // if asked to wait
   return 1;
 } /* SRXEFlashEraseSector() */
 
