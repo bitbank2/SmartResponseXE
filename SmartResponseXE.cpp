@@ -23,8 +23,12 @@
 //
 #include <Arduino.h>
 #include <avr/pgmspace.h>
+#include <avr/sleep.h>
 #include "SmartResponseXE.h"
 //#include <SPI.h>
+
+// The power button is connected to PD2 (RX1) and signals INT2
+#define POWER_BUTTON 0xd2
 
 // Mapping of keyboard to GPIO pins
 //static byte rowPins[ROWS] = {6,35,34,8,9,0};
@@ -284,6 +288,51 @@ uint8_t mydigitalRead(uint8_t pin)
   else
     return LOW;
 } /* mydigitalRead() */
+//
+// Called when the power button is pressed to wake up the system
+// Power up the display
+//
+ISR (INT2_vect)
+{
+  // cancel sleep as a precaution
+  sleep_disable();
+} 
+//
+// Put the device in a deep sleep to save power
+// Wakes up when pressing the "power" button
+//
+void SRXESleep(void)
+{
+  // Turn off the LCD
+  SRXEPowerDown();
+
+  TRXPR = 1 << SLPTR; // send transceiver to sleep
+
+  // disable ADC
+  ADCSRA = 0;  
+  DDRD &= ~(1 << PORTD2);	//PIN INT2 as input
+  PORTD |= (1 << PORTD2); // pull-up resistor, the pin is forced to 1 if nothing is connected
+  EIMSK &= ~(1 << INT2); //disabling interrupt on INT2
+  EICRA &= ~((1<<ISC21) | (1<<ISC20)); // low level triggers interrupt
+  EIFR |= (1 << INTF2); //clear interrupt flag
+  EIMSK |= (1 << INT2); //enabling interrupt flag on INT2
+
+  set_sleep_mode (SLEEP_MODE_PWR_DOWN);  
+  sleep_enable();
+ 
+  // turn off brown-out enable in software
+  // BODS must be set to one and BODSE must be set to zero within four clock cycles
+//  MCUCR = bit (BODS) | bit (BODSE);
+  // The BODS bit is automatically cleared after three clock cycles
+//  MCUCR = bit (BODS); 
+  
+  // We are guaranteed that the sleep_cpu call will be done
+  // as the processor executes the next instruction after
+  // interrupts are turned on.
+  sleep_cpu ();   // one cycle
+  SRXEPowerUp();
+} /* SRXESleep() */
+
 //
 // Initialize SPI using direct register access
 //

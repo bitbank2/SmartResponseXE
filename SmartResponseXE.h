@@ -31,6 +31,12 @@ void mydigitalWrite(uint8_t pin, uint8_t value);
 uint8_t mydigitalRead(uint8_t pin);
 
 //
+// Power Sleep (low power mode to save battery)
+// Wakes up when the "power" button is pressed
+//
+void SRXESleep(void);
+
+//
 // Power on the LCD
 //
 void SRXEPowerUp(void);
