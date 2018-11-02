@@ -684,7 +684,8 @@ byte fgColor0, fgColor1, fgColor2, bgColor;
               bOut &= 0xe3; // clear middle 3 bits
               bOut |= fgColor1; // second pixel (3 bits)
            }
-           if (ucTemp[tx+2] & bMask && tx != 6)
+           if (tx != 6 &&
+               ucTemp[tx+2] & bMask)
            {
               bOut &= 0xfc; // clear lower 2 bits
               bOut |= fgColor2; // third pixel (2 bits)
