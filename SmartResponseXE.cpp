@@ -98,7 +98,7 @@ const char powerup[] PROGMEM = {
 1, 0x11,  // sleep out
 1, 0x28,  // display off
 99, 50, // 50ms delay
-3, 0xc0, 0xf0, 0x00, // Vop = 0xF0
+3, 0xc0, 0xf8, 0x00, // Vop = 0xF0
 2, 0xc3, 0x04, // BIAS = 1/14
 2, 0xc4, 0x05, // Booster = x8
 2, 0xd0, 0x1d, // Enable analog circuit
@@ -310,7 +310,7 @@ void SRXESleep(void)
 
   // disable ADC
   ADCSRA = 0;  
-  DDRD &= ~(1 << PORTD2);	//PIN INT2 as input
+  DDRD &= ~(1 << PORTD2); //PIN INT2 as input
   PORTD |= (1 << PORTD2); // pull-up resistor, the pin is forced to 1 if nothing is connected
   EIMSK &= ~(1 << INT2); //disabling interrupt on INT2
   EICRA &= ~((1<<ISC21) | (1<<ISC20)); // low level triggers interrupt
@@ -530,11 +530,38 @@ byte b;
         SRXEWriteDataBlock(&b, 1);
 } /* SRXEcdScrollReset() */
 
+
+
+void SRXEHorizontalLine(int x, int y, int length,byte color,int thickness){
+      byte bTemp[128];
+
+      SRXESetPosition(x*3,y,length*3,thickness);
+      memset(bTemp, bColorToByte[color], length);
+      for(int i = 0; i< thickness ; i++){
+        SRXEWriteDataBlock(bTemp, length);
+      }
+
+
+}
+
+
+
+void SRXEVerticalLine(int x, int y, int height,byte color){
+      byte bTemp[128];
+
+      SRXESetPosition(x*3,y,1, height );
+      memset(bTemp, bColorToByte[color], height);
+      SRXEWriteDataBlock(bTemp, height);
+}
+
+
+
 //
 // Draw an outline or filled rectangle
 // Only draws on byte boundaries (3 pixels wide)
 // (display is treated as 128x136)
 //
+
 void SRXERectangle(int x, int y, int cx, int cy, byte color, byte bFilled)
 {
 byte bTemp[128];
