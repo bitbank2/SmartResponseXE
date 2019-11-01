@@ -69,6 +69,10 @@ void SRXEScroll(int iLines);
 // Reset the scroll position to 0
 //
 void SRXEScrollReset(void);
+
+void SRXEHorizontalLine(int x, int y, int length,byte color,int thickness);
+void SRXEVerticalLine(int x, int y, int height,byte color);
+
 //
 // Draw an outline or filled rectangle
 // Only draws on byte boundaries (3 pixels wide)
