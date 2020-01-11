@@ -37,7 +37,12 @@ const uint8_t rowPins[ROWS] = {0xe6, 0xb7, 0xb6, 0xb5, 0xb4, 0xe0};
 const uint8_t colPins[COLS] = {0xe4, 0xf1, 0xf3, 0xe2, 0xe1, 0xd7, 0xa0, 0xa5, 0xd5, 0xd4};
 static byte bKeyMap[COLS]; // bits indicating pressed keys
 static byte bOldKeyMap[COLS]; // previous map to look for pressed/released keys
+/* fdufnews 01/2020
+Corrected second position of the array
+was previously  :
 static byte bColorToByte[4] = {0, 0x4a, 0x92, 0xff};
+*/
+static byte bColorToByte[4] = {0, 0x49, 0x92, 0xff};
 static byte iCSPin, iDCPin, iResetPin;
 
 static int iScrollOffset;
